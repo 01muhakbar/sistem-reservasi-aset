@@ -1,0 +1,254 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  mahasiswa
+  fakultas
+  umum_komersial
+  kasubdit
+  pengelola
+}
+
+enum KycStatus {
+  NONE
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum VenueStatus {
+  active
+  under_maintenance
+}
+
+enum BookingStatus {
+  pending
+  approved
+  rejected
+  canceled
+  revoked
+  pending_reschedule
+}
+
+enum UsageType {
+  gladi_timeslot
+  main_event_fullday
+  main_event_halfday
+}
+
+enum ScheduleStatus {
+  locked
+  locked_temporary
+  confirmed
+  released
+}
+
+enum ReputationFlag {
+  clear
+  warning
+  blacklisted
+}
+
+enum CleanlinessStatus {
+  good
+  dirty
+  damaged
+}
+
+enum InventoryStatus {
+  available
+  maintenance
+}
+
+enum VendorCategory {
+  RIGGING
+  LED_VIDEOTRON
+  SOUND_SYSTEM
+  LIGHTING
+  SUPPORT_EQUIPMENT
+  DECORATION
+  CATERING
+  DOCUMENTATION
+  ENTERTAINMENT
+}
+
+enum FieldStatus {
+  MENUNGGU
+  DI_LOKASI
+  SELESAI
+}
+
+model Users {
+  id                     String         @id @default(uuid())
+  name                   String
+  email                  String         @unique
+  password_hash          String?        @db.Text
+  role                   Role
+  department_or_faculty  String?
+  kyc_status             KycStatus      @default(NONE)
+  identity_doc_url       String?
+  reset_password_token   String?
+  reset_password_expires DateTime?
+  reputation_flag        ReputationFlag @default(clear)
+  
+  bookings              Bookings[]
+  activityLogs          ActivityLogs[]
+  inspections           InspectionReports[]
+  notifications         Notifications[]
+}
+
+model Venues {
+  id        String      @id @default(uuid())
+  name      String      @unique
+  capacity  Int
+  status    VenueStatus @default(active)
+
+  schedules Schedules[]
+}
+
+model Bookings {
+  id                 String        @id @default(uuid())
+  booking_code       String        @unique
+  user_id            String
+  event_name         String
+  event_description  String?       @db.Text
+  document_url       String?
+  event_start_date   DateTime?
+  event_end_date     DateTime?
+  actual_event_start String?
+  actual_event_end   String?
+  status             BookingStatus @default(pending)
+  external_logistics_status String @default("not_required")
+  admin_notes        String?       @db.Text
+  agreed_to_tos      Boolean       @default(false)
+  agreed_at          DateTime?
+  created_at         DateTime      @default(now())
+  updated_at         DateTime      @updatedAt
+
+  user              Users          @relation(fields: [user_id], references: [id])
+  schedules         Schedules[]
+  activityLogs      ActivityLogs[]
+  inspectionReport  InspectionReports?
+  inventories       BookingInventories[]
+  vendors           BookingVendors[]
+}
+
+model Schedules {
+  id          String         @id @default(uuid())
+  booking_id  String
+  venue_id    String
+  usage_type  UsageType
+  start_time              DateTime
+  end_time                DateTime
+  setup_buffer_minutes    Int            @default(0)
+  teardown_buffer_minutes Int            @default(0)
+  status                  ScheduleStatus @default(locked)
+  expires_at  DateTime?
+
+  booking     Bookings       @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  venue       Venues         @relation(fields: [venue_id], references: [id])
+}
+
+model ActivityLogs {
+  id          String   @id @default(uuid())
+  booking_id  String
+  actor_id    String
+  action_type String
+  timestamp   DateTime @default(now())
+  details     String?  @db.Text
+
+  booking     Bookings @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  actor       Users    @relation(fields: [actor_id], references: [id])
+}
+
+model Inventories {
+  id             String          @id @default(uuid())
+  item_name      String
+  total_quantity Int
+  status         InventoryStatus @default(available)
+
+  bookings       BookingInventories[]
+}
+
+model BookingInventories {
+  id                String      @id @default(uuid())
+  booking_id        String
+  inventory_id      String
+  quantity_borrowed Int
+
+  booking           Bookings    @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  inventory         Inventories @relation(fields: [inventory_id], references: [id])
+  
+  @@unique([booking_id, inventory_id])
+}
+
+model InspectionReports {
+  id                      String            @id @default(uuid())
+  booking_id              String            @unique
+  inspector_id            String
+  cleanliness_status      CleanlinessStatus
+  facility_damage_details String?           @db.Text
+  photo_evidence_urls     String            @db.Text // JSON array string
+  violating_vendor_name   String?
+  created_at              DateTime          @default(now())
+
+  booking                 Bookings          @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  inspector               Users             @relation(fields: [inspector_id], references: [id])
+}
+
+model BookingVendors {
+  id              String         @id @default(uuid())
+  booking_id      String
+  vendor_category VendorCategory
+  vendor_name     String
+  pic_name        String
+  pic_phone       String
+  loading_start   DateTime
+  loading_end     DateTime
+  unloading_start DateTime
+  unloading_end   DateTime
+  check_in_status FieldStatus    @default(MENUNGGU)
+
+  booking         Bookings       @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+}
+
+model Settings {
+  key        String   @id
+  value      String   @db.Text
+  updated_at DateTime @updatedAt
+}
+
+enum RoleTarget {
+  KASUBDIT
+  PENGELOLA
+  PENGGUNA
+}
+
+enum UrgencyLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Notifications {
+  id          String       @id @default(uuid())
+  user_id     String?
+  role_target RoleTarget
+  title       String
+  message     String
+  action_url  String
+  is_read     Boolean      @default(false)
+  urgency     UrgencyLevel
+  created_at  DateTime     @default(now())
+
+  user        Users?       @relation(fields: [user_id], references: [id])
+}
